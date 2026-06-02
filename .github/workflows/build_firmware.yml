@@ -1,0 +1,48 @@
+name: build-firmware
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: software/v1.2.x_THREE2_ble
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install PlatformIO
+        run: pip install -U platformio
+      - name: Build app
+        run: pio run -e esp32s3
+      - name: Build filesystem image
+        run: pio run -e esp32s3 -t buildfs
+      - name: Merge into one factory bin
+        run: |
+          set -e
+          BUILD=.pio/build/esp32s3
+          BOOTAPP0=$(find "$HOME/.platformio/packages" -name boot_app0.bin | head -1)
+          echo "boot_app0 = $BOOTAPP0"
+          cp "$BOOTAPP0" "$BUILD/boot_app0.bin"
+          python -m esptool --chip esp32s3 merge_bin \
+            --flash_mode dio --flash_freq 80m --flash_size 8MB \
+            -o "$BUILD/3plus_cc_merged.bin" \
+            0x0      "$BUILD/bootloader.bin" \
+            0x8000   "$BUILD/partitions.bin" \
+            0xe000   "$BUILD/boot_app0.bin" \
+            0x10000  "$BUILD/firmware.bin" \
+            0x410000 "$BUILD/littlefs.bin"
+          ls -la "$BUILD"/*.bin
+      - name: Upload bins
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3plus_cc_firmware
+          path: |
+            software/v1.2.x_THREE2_ble/.pio/build/esp32s3/3plus_cc_merged.bin
+            software/v1.2.x_THREE2_ble/.pio/build/esp32s3/bootloader.bin
+            software/v1.2.x_THREE2_ble/.pio/build/esp32s3/partitions.bin
+            software/v1.2.x_THREE2_ble/.pio/build/esp32s3/boot_app0.bin
+            software/v1.2.x_THREE2_ble/.pio/build/esp32s3/firmware.bin
+            software/v1.2.x_THREE2_ble/.pio/build/esp32s3/littlefs.bin
